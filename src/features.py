@@ -10,7 +10,7 @@ Run: python -m src.features
 import numpy as np
 import pandas as pd
 
-from src.config import FORBIDDEN, LAG_WARMUP, PROCESSED, TARGET
+from src.config import FORBIDDEN, PROCESSED, TARGET
 from src.ingest import load_raw
 
 WEATHER_ORDER = {"GOOD": 0, "MISTY": 1, "BAD": 2}
@@ -70,10 +70,16 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # --- Lagged target: past values only. shift(1) is the whole ballgame;
     # without it, cnt_roll_7 would contain today's count. -----------------
+    # Windows are literal and match the column names. LAG_WARMUP is the
+    # *longest* window, not every window: tying cnt_lag_7 to it would turn
+    # it into a 28-day lag the moment a longer feature arrived.
     # If you add a longer lag, raise LAG_WARMUP in src/config.py.
     out["cnt_lag_1"] = out[TARGET].shift(1)
-    out["cnt_lag_7"] = out[TARGET].shift(LAG_WARMUP)
-    out["cnt_roll_7"] = out[TARGET].shift(1).rolling(LAG_WARMUP).mean()
+    out["cnt_lag_7"] = out[TARGET].shift(7)
+    out["cnt_roll_7"] = out[TARGET].shift(1).rolling(7).mean()
+    # Four-week demand level: tracks the growth trend that a 7-day window
+    # only half sees. Same shift-then-roll rule.
+    out["cnt_roll_28"] = out[TARGET].shift(1).rolling(28).mean()
 
     return out.dropna().reset_index(drop=True)
 
