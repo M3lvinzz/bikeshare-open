@@ -50,6 +50,17 @@ UNVERIFIED_COLS = {"cnt_2d_bfr"}
 # What feature_columns() and the tests actually enforce.
 FORBIDDEN = LEAKAGE_COLS | TIME_INDEX_COLS | UNVERIFIED_COLS
 
+# --- Every other raw column, classified so a new one cannot slip in -------
+# tests/test_contract.py fails on any raw column in none of these sets.
+
+# Read by build_features: numeric weather passes through; the string labels
+# are encoded (weather -> weather_severity, holiday/workday -> is_*).
+FEATURE_SOURCES = {"temp", "atemp", "hum", "windspeed", "weather", "holiday", "workday"}
+
+# String labels that duplicate what build_features derives from dteday
+# (month_sin/cos, dayofweek). Non-numeric, so feature_columns() skips them.
+UNUSED_COLS = {"season", "mnth", "weekday"}
+
 # Temporal split: train on 2011, validate on H1 2012, test on H2 2012.
 TRAIN_END = "2011-12-31"
 VALID_END = "2012-06-30"

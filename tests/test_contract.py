@@ -57,3 +57,32 @@ def test_persistence_baseline_is_reported():
     """The baseline that matters for a lag-driven model is 'yesterday again'.
     It must be in the comparison, whatever its score."""
     assert "baseline_persistence" in MODELS
+
+
+def test_every_raw_column_is_classified(raw):
+    """A column added to the raw file must not reach the model unexamined.
+    Every raw column is forbidden, a declared feature source, or declared
+    unused; anything else is new and needs a decision in src/config.py."""
+    from src.config import FEATURE_SOURCES, FORBIDDEN, UNUSED_COLS
+
+    classified = FORBIDDEN | FEATURE_SOURCES | UNUSED_COLS | {"dteday"}
+    unclassified = set(raw.columns) - classified
+    assert not unclassified, f"unclassified raw columns: {sorted(unclassified)}"
+
+
+def test_no_feature_restates_the_target(feats):
+    """Catches a leak under an innocent name (`out["riders"] = out.cnt`, or
+    casual and registered renamed): no feature, alone or paired with one other,
+    reproduces cnt exactly. test_no_forbidden_features only checks names."""
+    from itertools import combinations
+
+    import numpy as np
+
+    cols = feature_columns(feats)
+    y = feats[TARGET].to_numpy(dtype=float)
+    for r in (1, 2):
+        for subset in combinations(cols, r):
+            X = np.column_stack([feats[list(subset)].to_numpy(dtype=float), np.ones(len(y))])
+            coef, *_ = np.linalg.lstsq(X, y, rcond=None)
+            resid = np.abs(X @ coef - y).max()
+            assert resid > 1e-6, f"{subset} reproduces {TARGET} exactly (max residual {resid:.2e})"
