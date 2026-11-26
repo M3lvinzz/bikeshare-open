@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from src.config import FORBIDDEN, TARGET
-from src.features import build_features, feature_columns
+from src.features import build_features, encode_weather, feature_columns
 from src.ingest import load_raw
 
 
@@ -79,6 +79,14 @@ def test_roll_28_never_spans_the_missing_day(feats):
         f"{len(bad)} rows within 28 days after the gap survived: "
         f"{bad.min().date()} .. {bad.max().date()}"
     )
+
+
+def test_weather_encoder_rejects_unknown_labels():
+    """The real data only has known labels, so nothing else exercises the
+    guard: delete the `raise` and every other test stays green while a
+    relabelled export silently loses its BAD days to dropna()."""
+    with pytest.raises(ValueError, match="unmapped weather labels"):
+        encode_weather(pd.Series(["GOOD", "RAIN/SNOW"]))
 
 
 def test_no_missing_values(feats):

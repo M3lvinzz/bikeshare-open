@@ -134,3 +134,77 @@ still a +0.07 "improvement" that the pipeline reports without complaint.
 missing day the test would pass without asserting anything. Checking every
 row with a complete window, as `test_lags_are_true_calendar_lags` does, would
 close that.
+
+## Fault 3: the weather encoder's `raise` removed
+
+**Change** (`src/features.py`, `encode_weather`):
+
+```diff
+     unknown = set(known.unique()) - set(WEATHER_ORDER)
+-    if unknown:
+-        raise ValueError(f"unmapped weather labels: {sorted(unknown)}")
+     return series.map(WEATHER_ORDER).astype(float)
+```
+
+**Hook stderr, first attempt: none.** The hook ran and `tests/test_leakage.py`
+passed, so it exited 0 and said nothing. **`make test` with the guard gone:**
+
+```
+16 passed in 1.56s
+```
+
+The suite was green under this fault. Nothing exercised the guard, because the
+real data only contains GOOD / MISTY / BAD. What that costs, shown in memory
+with BAD relabelled the way a new export might spell it (`data/raw` untouched):
+
+```
+rows: 672 with known labels, 654 after BAD -> 'RAIN/SNOW'; 18 days silently dropped, no error
+```
+
+`test_only_expected_rows_are_dropped` would catch this only if the relabelled
+file were the one on disk; nothing runs it against new data.
+
+**Fix: a test of the guard itself.** Added to `tests/test_leakage.py` so the
+hook runs it on every src edit:
+
+```python
+def test_weather_encoder_rejects_unknown_labels():
+    with pytest.raises(ValueError, match="unmapped weather labels"):
+        encode_weather(pd.Series(["GOOD", "RAIN/SNOW"]))
+```
+
+**`make test` with the new test and the guard still removed:**
+
+```
+E       Failed: DID NOT RAISE ValueError
+tests/test_leakage.py:88: Failed
+FAILED tests/test_leakage.py::test_weather_encoder_rejects_unknown_labels - F...
+1 failed, 16 passed in 1.48s
+```
+
+**Hook stderr, fault re-seeded after the test existed:**
+
+```
+Leakage tests failed after editing /Users/melvin/Documents/DSC180A/bikeshare-open/src/features.py:
+.......F..                                                               [100%]
+=================================== FAILURES ===================================
+_________________ test_weather_encoder_rejects_unknown_labels __________________
+
+    def test_weather_encoder_rejects_unknown_labels():
+        """The real data only has known labels, so nothing else exercises the
+        guard: delete the `raise` and every other test stays green while a
+        relabelled export silently loses its BAD days to dropna()."""
+>       with pytest.raises(ValueError, match="unmapped weather labels"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+tests/test_leakage.py:88: Failed
+=========================== short test summary info ============================
+FAILED tests/test_leakage.py::test_weather_encoder_rejects_unknown_labels - F...
+1 failed, 9 passed in 0.29s
+```
+
+**Turns to fix:** 3. Seeding it went unnoticed (green hook, green suite). One
+turn to show the silent loss, one to write the missing test and see it fail,
+one to restore the `raise` (hook silent, 17 passed). This is the fault that
+justified a new test rather than just a revert.
