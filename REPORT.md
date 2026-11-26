@@ -82,7 +82,32 @@ Nothing in this exercise was tuned on it.
 
 ## Exercise 5: ridge vs persistence
 
-_To be written._
+Ridge is worth deploying over "yesterday again", but only with its level
+recalibrated, and the R^2/MAE split shows why. On test, ridge wins R^2
+(0.6239 vs 0.5099) and loses MAE (879.3 vs 840.1) because the two metrics
+reward different things, and ridge's MAE loss is almost all one constant
+error. Ridge under-predicts every day by 427 rides on average (persistence:
++16), because it learned its level from 2011 and ridership kept growing. The
+same offset was already visible on validation (-396) before the test split was
+ever scored. On the 32 test days where demand moved more than 1,500 rides from
+the day before (weather turns, holidays, Hurricane Sandy), persistence is wrong
+by construction, and ridge's MAE is 1,471 against persistence's 2,413. Ridge
+also has 10 days with errors over 2,000 against persistence's 17. On the 152
+calm days persistence wins, 509 vs 755, and that is the gap R^2 forgives and
+MAE does not. Subtracting the validation offset, a number fixed before the test
+period, cuts ridge's test MAE to 716.0, beating persistence by 124 rides a day.
+Corrected ridge is closer than persistence on 54% of days (43% uncorrected). An
+operator planning bikes and staff cares most about the swing days, which are
+the ones that strand riders or empty docks, so ridge earns its place. Two
+caveats keep the claim modest. Persistence still has the lower median error
+(506 vs 553 corrected), so on a typical calm day "yesterday again" remains
+hard to beat. And the correction is a single offset estimated once; in
+deployment it would have to be re-estimated as demand grows, which this split
+cannot test. Every number here comes from `python -m src.ridge_vs_persistence`.
+
+_Disclosure: this analysis looked at test-period errors after Exercise 4's
+single test run. It chose nothing: no model, feature, or correction was
+selected on them, and the offset applied comes from validation._
 
 ## Attribution
 
