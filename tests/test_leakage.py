@@ -57,6 +57,30 @@ def test_rolling_mean_excludes_today(feats):
         assert feats.set_index("dteday").cnt_roll_7[date] == pytest.approx(expected)
 
 
+def test_roll_28_is_mean_of_previous_28_calendar_days(feats):
+    """cnt_roll_28 on 2012-03-15 must be the mean of cnt on 2012-02-16 ..
+    2012-03-14, read from the raw file -- strictly earlier days, never d."""
+    raw = load_raw().set_index("dteday")[TARGET]
+    date = pd.Timestamp("2012-03-15")
+    window = pd.date_range(date - pd.Timedelta(days=28), date - pd.Timedelta(days=1))
+    assert len(window) == 28 and window.isin(raw.index).all()
+    expected = raw[window].mean()
+    assert feats.set_index("dteday").cnt_roll_28[date] == pytest.approx(expected)
+
+
+def test_roll_28_never_spans_the_missing_day(feats):
+    """2011-03-10 is absent from the raw data. Any day whose 28-day window
+    contains it has no honest cnt_roll_28 and must be dropped, not averaged
+    over 27 days or over a row-shifted window."""
+    gap = pd.Timestamp("2011-03-10")
+    contaminated = pd.date_range(gap + pd.Timedelta(days=1), gap + pd.Timedelta(days=28))
+    bad = feats.dteday[feats.dteday.isin(contaminated)]
+    assert bad.empty, (
+        f"{len(bad)} rows within 28 days after the gap survived: "
+        f"{bad.min().date()} .. {bad.max().date()}"
+    )
+
+
 def test_no_missing_values(feats):
     assert feats[feature_columns(feats)].isna().sum().sum() == 0
 
