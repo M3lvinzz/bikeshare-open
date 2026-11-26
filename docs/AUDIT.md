@@ -126,7 +126,7 @@ Run against this repo at `073c3e6` (after Exercises 1 and 2). Result:
 | Same-day weather used as features | No | Agreed. Starter design, kept; stated as a limitation in REPORT.md. |
 | Ridge loses to persistence on test MAE (879.3 vs 840.1) | No | Agreed, and it is Exercise 5's question. Reported, not hidden. |
 | `leakage_demo.py` uses casual + registered | No | Intentional demo, not in `make all`, never quoted as a result. |
-| README said 14 tests; 17 run | No | Fixed: README now says 17. |
+| README said 14 tests; 17 run | No | Fixed; the README now says "every test must pass" so the count cannot drift again. |
 | `check_identity` ran on the raw CSV, not the parquet | No | Limitation of the run. The lag features are covered by `test_lags_are_true_calendar_lags`, `test_rolling_mean_excludes_today` and the two `cnt_roll_28` tests. |
 
 **Test-set exposure:** this run read `reports/metrics.json`, which contains test

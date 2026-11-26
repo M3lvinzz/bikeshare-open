@@ -4,6 +4,9 @@ Each fault was introduced with the agent's Edit tool, so the PostToolUse hook
 (`.claude/hooks/check_leakage.sh`) ran exactly as it would on a real mistake.
 "Hook stderr" is what the hook returned to the agent; "`make test`" is the
 full suite run afterwards. All output below is pasted from the actual runs.
+Pass counts are those of the suite at the time (16, then 17 tests); tests
+added later raise the total but not the failures shown. Each fault's commit
+contains the suite exactly as it was when that output was captured.
 
 ## Exercise 1: the new feature's test, before the feature existed
 
