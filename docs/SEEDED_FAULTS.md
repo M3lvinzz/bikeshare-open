@@ -208,3 +208,87 @@ FAILED tests/test_leakage.py::test_weather_encoder_rejects_unknown_labels - F...
 turn to show the silent loss, one to write the missing test and see it fail,
 one to restore the `raise` (hook silent, 17 passed). This is the fault that
 justified a new test rather than just a revert.
+
+## Fault 4: a `cp` into `data/raw/` from Bash
+
+**Change:** a copy of the raw CSV with one extra column, `total_riders` =
+`cnt` (a leak with an innocent name), copied over the original from Bash:
+
+```
+cp /tmp/bikeshare-ex/bike_daily_tampered.csv data/raw/bike_daily.csv
+```
+
+**What happened:** nothing stopped it, and nothing noticed.
+
+- The permission rules `Write(./data/raw/**)` / `Edit(./data/raw/**)` bind the
+  Write and Edit tools. A `cp` inside a Bash command is neither.
+- The PostToolUse hook matches `Edit|Write` and only acts on `src/*.py`. It
+  never ran.
+- The pipeline and the suite accepted the file:
+
+```
+ M data/raw/bike_daily.csv
+394db0d9d65573f4                                   # sha256, was a6bed1577f6e4de5
+OK ingest: 728 rows, 2011-01-03 -> 2012-12-31
+  temp, atemp, hum, windspeed, total_riders, dayofweek, is_weekend, is_holiday, is_workday, month_sin, month_cos, weather_severity, cnt_lag_1, cnt_lag_7, cnt_roll_7, cnt_roll_28
+17 passed in 1.27s
+ridge valid r2: 0.9999  total_riders in features: True
+```
+
+`total_riders` is numeric and not in `FORBIDDEN`, so `feature_columns()` let
+it in, and `test_no_forbidden_features` cannot see it: it only checks names
+that are already forbidden. Ridge validation R^2 went to 0.9999 with every
+check green. Restored with `git checkout -- data/raw/bike_daily.csv` (sha256
+back to `a6bed1577f6e4de5...`).
+
+**What would have caught it:**
+
+- **A hash check on the raw file (implemented).** `load_raw()` now compares
+  the file's sha256 with `RAW_SHA256` in `src/config.py` and raises on any
+  difference. Every stage and every test goes through `load_raw()`, so a
+  changed file stops `make data`, `make features`, `make train` and `make test`
+  alike, however it was changed. Diff:
+
+```diff
+# src/config.py
++RAW_SHA256 = "a6bed1577f6e4de56dcfae6d8315985073cc0ad3446c8c99ed60c86a0b5ad9dc"
+
+# src/ingest.py
+ def load_raw() -> pd.DataFrame:
++    digest = hashlib.sha256(RAW.read_bytes()).hexdigest()
++    if digest != RAW_SHA256:
++        raise ValueError(
++            f"{RAW.name} has changed (sha256 {digest[:16]}..., expected "
++            f"{RAW_SHA256[:16]}...). Raw data is immutable: restore it with "
++            f"`git checkout -- {RAW.relative_to(RAW.parents[2])}`."
++        )
+```
+
+  Run against the tampered copy (pointed at directly, since a second `cp` into
+  `data/raw/` was refused by the session's permissions):
+
+```
+ValueError: bike_daily_tampered.csv has changed (sha256 394db0d9d65573f4..., expected a6bed1577f6e4de5...). Raw data is immutable: restore it with `git checkout -- tmp/bikeshare-ex/bike_daily_tampered.csv`.
+```
+
+  (The odd restore path is because `RAW` was pointed at `/tmp` for this run; for
+  the real file it reads `git checkout -- data/raw/bike_daily.csv`.)
+
+- **A PreToolUse hook on Bash** that exits 2 for any command mentioning
+  `data/raw`. It blocks the write before it happens instead of detecting it
+  afterwards, but it is pattern matching on command text (`cd data && cp ... raw/`
+  gets past a naive one).
+- **A filesystem permission:** `chmod -w data/raw/bike_daily.csv`. Stops `cp`
+  outright, regardless of tool.
+- **The unclassified-column test** (`tests/test_contract.py`, required
+  separately) would also flag `total_riders` as a column in the raw file that
+  `src/config.py` does not classify. It catches this particular change, but not
+  edits to values, which the hash does.
+
+**Turns to fix:** 1 to restore from git, 1 more to add the hash check.
+
+**A bonus catch:** while the hash check was being added, the Edit to
+`src/ingest.py` landed before its `import hashlib` did. The hook fired on that
+intermediate state (`NameError: name 'hashlib' is not defined`, 9 errors in
+`tests/test_leakage.py`), which is the hook doing its job on an unplanned
+mistake rather than a seeded one.
