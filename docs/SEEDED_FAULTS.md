@@ -75,3 +75,62 @@ leaked identity is enough to inflate the score by 0.14 with no error.
 
 **Turns to fix:** 1. The hook's message names the column and the test, and the
 fix is reverting one line. The hook was silent on the fixing edit.
+
+## Fault 2: `.shift(1)` deleted from `cnt_roll_7`
+
+**Change** (`src/features.py`, `build_features`):
+
+```diff
+-    out["cnt_roll_7"] = out[TARGET].shift(1).rolling(7).mean()
++    out["cnt_roll_7"] = out[TARGET].rolling(7).mean()
+```
+
+**Hook stderr:**
+
+```
+Leakage tests failed after editing /Users/melvin/Documents/DSC180A/bikeshare-open/src/features.py:
+[672 rows x 29 columns]
+
+    def test_rolling_mean_excludes_today(feats):
+        """cnt_roll_7 must be the mean of the 7 calendar days *before* today."""
+        by_date = feats.set_index("dteday")[TARGET]
+        date = feats.dteday.iloc[200]
+        window = [date - pd.Timedelta(days=k) for k in range(1, 8)]
+        if all(d in by_date.index for d in window):
+            expected = sum(by_date[d] for d in window) / 7
+>           assert feats.set_index("dteday").cnt_roll_7[date] == pytest.approx(expected)
+E           assert np.float64(4605.285714285715) == 4724.428571428572 ± 0.00472443
+E             
+E             comparison failed
+E             Obtained: 4605.285714285715
+E             Expected: 4724.428571428572 ± 0.00472443
+
+tests/test_leakage.py:57: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_leakage.py::test_rolling_mean_excludes_today - assert np.fl...
+1 failed, 8 passed in 0.29s
+```
+
+**`make test`:**
+
+```
+E           assert np.float64(4605.285714285715) == 4724.428571428572 ± 0.00472443
+E             
+E             comparison failed
+E             Obtained: 4605.285714285715
+E             Expected: 4724.428571428572 ± 0.00472443
+FAILED tests/test_leakage.py::test_rolling_mean_excludes_today - assert np.fl...
+1 failed, 15 passed in 1.65s
+```
+
+**What it would have done to the result:** ridge validation R^2 0.6839 ->
+0.7541. Today's count is 1/7 of the feature, a quieter leak than fault 1 but
+still a +0.07 "improvement" that the pipeline reports without complaint.
+
+**Turns to fix:** 1 (restore `.shift(1)`).
+
+**Weakness noticed:** the test checks one row (`iloc[200]`) and is wrapped in
+`if all(d in by_date.index ...)`, so if that row's window ever contained a
+missing day the test would pass without asserting anything. Checking every
+row with a complete window, as `test_lags_are_true_calendar_lags` does, would
+close that.
