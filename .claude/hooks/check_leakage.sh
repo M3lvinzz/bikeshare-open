@@ -19,7 +19,11 @@ case "$path" in
 esac
 
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
-if ! out=$(python -m pytest tests/test_leakage.py -q 2>&1); then
+# Hooks do not inherit an activated venv; without this, a machine with no
+# bare `python` on PATH reports "command not found" as a test failure.
+PY=python
+[ -x .venv/bin/python ] && PY=.venv/bin/python
+if ! out=$("$PY" -m pytest tests/test_leakage.py -q 2>&1); then
   echo "Leakage tests failed after editing $path:" >&2
   echo "$out" | tail -20 >&2
   exit 2
